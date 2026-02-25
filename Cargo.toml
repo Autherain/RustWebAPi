@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 description = "Petite API Axum avec Hello World, Create et Get en RAM"
 
+[[bin]]
+name = "hello_world_api"
+path = "src/cmd/main.rs"
+
 [dependencies]
 axum = "0.7"
 async-trait = "0.1"
@@ -17,3 +21,4 @@ tower = "0.4"
 tower-http = { version = "0.6", features = ["trace", "request-id"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+async-nats = "0.46"

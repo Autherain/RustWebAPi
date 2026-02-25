@@ -1,13 +1,11 @@
 //! Point d'entrée : wiring domaine → store → server (style DDD, équivalent cmd/server en Go).
 
-mod domain;
-mod server;
-mod store;
-
-use server::{router, AppState};
-use store::Store;
+use hello_world_api::server::{router, AppState};
+use hello_world_api::store::Store;
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+const NATS_URL: &str = "127.0.0.1:4222";
 
 #[tokio::main]
 async fn main() {
@@ -19,12 +17,17 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer().json())
         .init();
 
+    let nats = async_nats::connect(NATS_URL)
+        .await
+        .expect("connexion NATS (démarre le container avec: docker compose up -d)");
+    tracing::info!(url = NATS_URL, "NATS connecté");
+
     let store = Store::new();
-    let state = AppState::new(store);
+    let state = AppState::new(store, nats);
 
     let app = router(state);
 
-    let addr = "127.0.0.1:3000";
+    let addr = "127.0.0.1:4000";
     let listener = tokio::net::TcpListener::bind(addr).await.expect("bind");
 
     tracing::info!(%addr, "API démarrée");

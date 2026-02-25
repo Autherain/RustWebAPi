@@ -1,0 +1,9 @@
+services:
+  nats:
+    image: nats:alpine
+    container_name: nats
+    ports:
+      - "4222:4222"   # Client connections
+      - "8222:8222"   # HTTP monitoring (optionnel)
+    command: ["--jetstream"]  # Active JetStream si tu veux de la persistance plus tard
+    restart: unless-stopped
