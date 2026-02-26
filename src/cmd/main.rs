@@ -1,26 +1,23 @@
 //! Point d'entrée : wiring domaine → store → server (style DDD, équivalent cmd/server en Go).
 
+use hello_world_api::environment;
 use hello_world_api::server::{router, AppState};
 use hello_world_api::store::Store;
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-const NATS_URL: &str = "127.0.0.1:4222";
-
 #[tokio::main]
 async fn main() {
-    // Un seul subscriber global : pas besoin de "logger::default()" ni de passer un logger.
-    // Dans store, domain, server : appelez directement tracing::info!, tracing::error!, etc.
-    // Les "attributs" sont les champs structurés : tracing::info!(user_id = 42, "msg").
+    let env_vars = environment::parse();
+
     tracing_subscriber::registry()
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .with(tracing_subscriber::fmt::layer().json())
         .init();
 
-    let nats = async_nats::connect(NATS_URL)
+    let nats = async_nats::connect(&env_vars.nats_url)
         .await
         .expect("connexion NATS (démarre le container avec: docker compose up -d)");
-    tracing::info!(url = NATS_URL, "NATS connecté");
 
     let store = Store::new();
     let state = AppState::new(store, nats);
@@ -29,11 +26,6 @@ async fn main() {
 
     let addr = "127.0.0.1:4000";
     let listener = tokio::net::TcpListener::bind(addr).await.expect("bind");
-
-    tracing::info!(%addr, "API démarrée");
-    tracing::debug!(
-        "routes: GET /, POST /items, GET /items/:id, GET /swagger-ui"
-    );
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())

@@ -1,5 +1,8 @@
 //! Handlers HTTP : orchestration domaine + store + mappers.
 //!
+//! Middlewares (ServiceBuilder) : TraceLayer → Timeout (tower_http, 504) → ConcurrencyLimit
+//! → RequestId → Routes.
+//!
 //! Spans (contexte de log par requête, style Go `logger.With("request_id", id)`) :
 //! on peut attacher un span à toute la durée du handler pour que les logs domaine/store
 //! aient automatiquement request_id, item_id, etc. Pour ça : créer un span puis exécuter
@@ -14,8 +17,11 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use std::time::Duration;
+use tower::{limit::ConcurrencyLimitLayer, ServiceBuilder};
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, RequestId, SetRequestIdLayer},
+    timeout::TimeoutLayer as HttpTimeoutLayer,
     trace::TraceLayer,
 };
 use utoipa::OpenApi;
@@ -52,8 +58,6 @@ pub async fn create_item(
     //   async move { ... tout le corps du handler ... }.instrument(span).await
     let name = request_to_name(&payload);
     validate_item_name(name)?;
-
-    tracing::error!(payload = ?payload, "payload");
 
     let id = uuid::Uuid::new_v4().to_string();
     let item = Item::new(id.clone(), name.to_owned());
@@ -105,27 +109,43 @@ pub async fn get_item(
 struct ApiDoc;
 
 /// Construit le routeur Axum avec Swagger UI.
-/// tower-http : x-request-id (header + extensions) + TraceLayer avec trace_id dans le span
-/// pour que tous les logs (handler, domaine, store) aient trace_id dans le JSON.
+/// Middlewares (de l'extérieur vers l'intérieur) :
+/// - TraceLayer : logs de chaque requête (durée, status) + trace_id dans le span
+/// - TimeoutLayer (tower_http) : 30 s max, réponse 504 en cas de dépassement
+/// - ConcurrencyLimitLayer : max 100 requêtes simultanées
+/// - RequestId : x-request-id (header + extensions)
 pub fn router(state: AppState) -> Router {
+    let middleware = ServiceBuilder::new()
+        .layer(
+            TraceLayer::new_for_http().make_span_with(
+                |req: &axum::http::Request<axum::body::Body>| {
+                    let trace_id = req
+                        .extensions()
+                        .get::<RequestId>()
+                        .and_then(|id: &RequestId| id.header_value().to_str().ok())
+                        .map(String::from)
+                        .filter(|s: &String| !s.is_empty())
+                        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+                    tracing::info_span!("request", trace_id = %trace_id)
+                },
+            ),
+        )
+        .layer(
+            HttpTimeoutLayer::with_status_code(
+                StatusCode::GATEWAY_TIMEOUT,
+                Duration::from_secs(30),
+            ),
+        )
+        .layer(ConcurrencyLimitLayer::new(100))
+        .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid::default()))
+        .layer(PropagateRequestIdLayer::x_request_id());
+
     Router::new()
         .route("/", get(hello))
         .route("/items", post(create_item))
         .route("/items/:id", get(get_item))
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid::default()))
-        .layer(
-            TraceLayer::new_for_http().make_span_with(|req: &axum::http::Request<axum::body::Body>| {
-                let trace_id = req
-                    .extensions()
-                    .get::<RequestId>()
-                    .and_then(|id: &RequestId| id.header_value().to_str().ok())
-                    .map(String::from)
-                    .filter(|s: &String| !s.is_empty())
-                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-                tracing::info_span!("request", trace_id = %trace_id)
-            }),
-        )
-        .layer(PropagateRequestIdLayer::x_request_id())
+        .layer(middleware)
         .with_state(state)
 }
+
