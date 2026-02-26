@@ -1,1 +1,0 @@
-WithGracefulShutdown<SetRequestId<tower_http::trace::Trace<PropagateRequestId<Router>, SharedClassifier<ServerErrorsAsFailures>, {closure@src/main.rs:37:55: 37:100}>, MakeRequestUuid>, _, impl std::future::Future<Output = ()>>

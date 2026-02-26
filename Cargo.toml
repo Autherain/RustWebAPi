@@ -21,5 +21,7 @@ tower = { version = "0.4", features = ["limit"] }
 tower-http = { version = "0.6", features = ["trace", "request-id", "timeout"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-async-nats = "0.46"
+async-nats = { version = "0.46", features = ["jetstream"] }
+bytes = "1"
+futures-util = "0.3"
 dotenvy = "0.15"

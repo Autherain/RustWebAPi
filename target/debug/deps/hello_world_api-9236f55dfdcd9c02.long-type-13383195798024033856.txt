@@ -1,2 +1,0 @@
-fn(axum::extract::State<AppState>, Json<CreateItemRequest>) -> impl std::future::Future<Output = impl IntoResponse> {create_item}
-fn(axum::extract::State<AppState>, Json<CreateItemRequest>) -> impl std::future::Future<Output = impl IntoResponse> {create_item}: Handler<_, _>

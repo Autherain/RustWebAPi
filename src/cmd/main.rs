@@ -1,7 +1,7 @@
 //! Point d'entrée : wiring domaine → store → server (style DDD, équivalent cmd/server en Go).
 
 use hello_world_api::environment;
-use hello_world_api::server::{router, AppState};
+use hello_world_api::server::{router, spawn_guests_stream_tasks, AppState};
 use hello_world_api::store::Store;
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -18,6 +18,8 @@ async fn main() {
     let nats = async_nats::connect(&env_vars.nats_url)
         .await
         .expect("connexion NATS (démarre le container avec: docker compose up -d)");
+
+    spawn_guests_stream_tasks(nats.clone());
 
     let store = Store::new();
     let state = AppState::new(store, nats);
