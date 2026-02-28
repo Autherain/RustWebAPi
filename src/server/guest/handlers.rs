@@ -1,5 +1,6 @@
 //! Handlers HTTP pour les guests.
 
+use async_nats::jetstream::context::traits::Publisher;
 use axum::{
     extract::{Extension, Path, State},
     http::StatusCode,
