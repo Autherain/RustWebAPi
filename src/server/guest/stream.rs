@@ -82,12 +82,6 @@ async fn run_consumer(js: Context) -> Result<(), Box<dyn std::error::Error + Sen
         while let Some(res) = messages.next().await {
             match res {
                 Ok(m) => {
-                    let trace_id = m
-                        .headers
-                        .as_ref()
-                        .and_then(|h| h.get(TRACE_ID_HEADER))
-                        .map(|v| v.as_str().to_string())
-                        .unwrap_or_else(|| "".to_string());
                     let sem = semaphore.clone();
                     tokio::spawn(async move {
                         let _permit = match sem.acquire().await {
@@ -95,8 +89,6 @@ async fn run_consumer(js: Context) -> Result<(), Box<dyn std::error::Error + Sen
                             Err(_) => return,
                         };
                         let payload = String::from_utf8_lossy(&m.payload);
-                        let span = tracing::info_span!("consumer guest", trace_id = %trace_id);
-                        let _guard = span.enter();
                         info!(subject = %m.subject, payload = %payload, "[consumer guest] opt-out reçu");
                         if let Err(e) = m.ack().await {
                             error!("[consumer guest] ack failed: {}", e);
