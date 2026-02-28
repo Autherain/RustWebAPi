@@ -15,13 +15,23 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer().json())
         .init();
 
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect(&env_vars.database_url)
+        .await
+        .expect("connexion SQLite (vérifiez ECH_DATABASE_URL, ex: sqlite:data.db)");
+
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("migrations SQLite");
+
     let nats = async_nats::connect(&env_vars.nats_url)
         .await
         .expect("connexion NATS (démarre le container avec: docker compose up -d)");
 
     spawn_guests_stream_tasks(nats.clone());
 
-    let store = Store::new();
+    let store = Store::new(pool);
     let state = AppState::new(store, nats);
 
     let app = router(state);

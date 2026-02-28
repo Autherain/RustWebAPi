@@ -1,5 +1,4 @@
-//! DTOs (structures de données) de la couche API — request/response.
-//! Équivalent des types JSON du serveur en Go.
+//! DTOs API pour les items.
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;

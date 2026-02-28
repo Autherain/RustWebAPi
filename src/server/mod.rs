@@ -1,12 +1,11 @@
-//! Server HTTP : DTOs, mappers domaine ↔ API, handlers, état, router.
+//! Server HTTP : modules par ressource (item, guest), état, router.
 
-mod dto;
 mod error;
+mod guest;
 mod handlers;
-mod mapper;
-mod nats_consumer;
+mod item;
 mod state;
 
+pub use guest::spawn_guests_stream_tasks;
 pub use handlers::router;
-pub use nats_consumer::spawn_guests_stream_tasks;
 pub use state::AppState;

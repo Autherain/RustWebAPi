@@ -1,7 +1,7 @@
-//! Mappers entre le domaine et les DTOs serveur (API).
+//! Mappers domaine Item ↔ DTOs API.
 
 use crate::domain::Item;
-use crate::server::dto::{CreateItemRequest, ItemResponse};
+use crate::server::item::dto::{CreateItemRequest, ItemResponse};
 
 /// Domaine → DTO réponse API.
 pub fn domain_to_response(item: &Item) -> ItemResponse {
@@ -11,7 +11,7 @@ pub fn domain_to_response(item: &Item) -> ItemResponse {
     }
 }
 
-/// DTO requête API → nom validé pour le domaine.
+/// DTO requête API → nom pour le domaine.
 /// La validation du nom est faite côté domaine avant de construire l'Item.
 pub fn request_to_name(req: &CreateItemRequest) -> &str {
     req.name.as_str()

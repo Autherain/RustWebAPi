@@ -1,21 +1,11 @@
-//! Handlers HTTP : orchestration domaine + store + mappers.
+//! Router HTTP et point d’entrée des handlers.
 //!
-//! Middlewares (ServiceBuilder) : TraceLayer → Timeout (tower_http, 504) → ConcurrencyLimit
-//! → RequestId → Routes.
-//!
-//! Spans (contexte de log par requête, style Go `logger.With("request_id", id)`) :
-//! on peut attacher un span à toute la durée du handler pour que les logs domaine/store
-//! aient automatiquement request_id, item_id, etc. Pour ça : créer un span puis exécuter
-//! le corps dans `async move { ... }.instrument(span).await` (voir commentaire dans create_item).
-//! Le span ne se perd pas dans les appels domaine/store (même tâche) ; il se perdrait
-//! dans un `tokio::spawn` sans `.instrument(span.clone())`.
+//! Middlewares (ServiceBuilder) : TraceLayer → Timeout → ConcurrencyLimit → RequestId → Routes.
+//! Les handlers par ressource (items, guests) sont dans leurs modules dédiés.
 
 use axum::{
-    extract::{Path, State},
-    http::StatusCode,
-    response::IntoResponse,
-    routing::{get, post},
-    Json, Router,
+    routing::get,
+    Router,
 };
 use std::time::Duration;
 use tower::{limit::ConcurrencyLimitLayer, ServiceBuilder};
@@ -27,10 +17,8 @@ use tower_http::{
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::domain::{validate_item_name, Item};
-use crate::server::dto::{CreateItemRequest, ItemResponse};
-use crate::server::error::ApiError;
-use crate::server::mapper::{domain_to_response, request_to_name};
+use crate::server::guest::{create_guest, delete_guest, get_guest, update_guest};
+use crate::server::item::{create_item, get_item};
 use crate::server::state::AppState;
 
 /// GET / — Hello World
@@ -38,82 +26,37 @@ pub async fn hello() -> &'static str {
     "Hello World"
 }
 
-/// POST /items — Créer un item (validation domaine + repository + mapper).
-#[utoipa::path(
-    post,
-    path = "/items",
-    request_body = CreateItemRequest,
-    responses(
-        (status = 201, description = "Item créé", body = ItemResponse),
-        (status = 400, description = "Requête invalide")
-    ),
-    tag = "items"
-)]
-pub async fn create_item(
-    State(state): State<AppState>,
-    Json(payload): Json<CreateItemRequest>,
-) -> Result<impl IntoResponse, ApiError> {
-    // Pour un contexte de log par requête (request_id, item_id dans tous les logs) :
-    //   let span = tracing::info_span!("create_item", request_id = %uuid::Uuid::new_v4());
-    //   async move { ... tout le corps du handler ... }.instrument(span).await
-    let name = request_to_name(&payload);
-    validate_item_name(name)?;
-
-    let id = uuid::Uuid::new_v4().to_string();
-    let item = Item::new(id.clone(), name.to_owned());
-    tracing::info!(item_id = %id, "handler: creating item");
-    let created = state.store.items.create(item).await?;
-
-    Ok((StatusCode::CREATED, Json(domain_to_response(&created))))
-}
-
-/// GET /items/{id} — Récupérer un item par id.
-#[utoipa::path(
-    get,
-    path = "/items/{id}",
-    params(
-        ("id" = String, Path, description = "ID de l'item")
-    ),
-    responses(
-        (status = 200, description = "Item trouvé", body = ItemResponse),
-        (status = 404, description = "Item non trouvé")
-    ),
-    tag = "items"
-)]
-pub async fn get_item(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<impl IntoResponse, ApiError> {
-    tracing::debug!(item_id = %id, "handler: get_item");
-    let item = state
-        .store
-        .items
-        .get_by_id(&id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-
-    Ok((StatusCode::OK, Json(domain_to_response(&item))))
-}
-
 #[derive(OpenApi)]
 #[openapi(
-    paths(create_item, get_item),
-    components(schemas(CreateItemRequest, ItemResponse)),
+    paths(
+        crate::server::item::handlers::create_item,
+        crate::server::item::handlers::get_item,
+        crate::server::guest::handlers::create_guest,
+        crate::server::guest::handlers::get_guest,
+        crate::server::guest::handlers::update_guest,
+        crate::server::guest::handlers::delete_guest,
+    ),
+    components(schemas(
+        crate::server::item::CreateItemRequest,
+        crate::server::item::ItemResponse,
+        crate::server::guest::CreateGuestRequest,
+        crate::server::guest::UpdateGuestRequest,
+        crate::server::guest::GuestResponse,
+        crate::server::guest::JsonFieldResponse,
+    )),
     info(
         title = "Hello World API",
         version = "0.1.0",
-        description = "API minimaliste : Hello World + Create/Get en RAM (DDD)"
+        description = "API minimaliste : Hello World + Items en RAM + Guests SQLite (DDD)"
     ),
-    tags((name = "items", description = "Items en mémoire"))
+    tags(
+        (name = "items", description = "Items en mémoire"),
+        (name = "guests", description = "Guests en SQLite")
+    )
 )]
 struct ApiDoc;
 
 /// Construit le routeur Axum avec Swagger UI.
-/// Middlewares (de l'extérieur vers l'intérieur) :
-/// - TraceLayer : logs de chaque requête (durée, status) + trace_id dans le span
-/// - TimeoutLayer (tower_http) : 30 s max, réponse 504 en cas de dépassement
-/// - ConcurrencyLimitLayer : max 100 requêtes simultanées
-/// - RequestId : x-request-id (header + extensions)
 pub fn router(state: AppState) -> Router {
     let middleware = ServiceBuilder::new()
         .layer(
@@ -130,22 +73,26 @@ pub fn router(state: AppState) -> Router {
                 },
             ),
         )
-        .layer(
-            HttpTimeoutLayer::with_status_code(
-                StatusCode::GATEWAY_TIMEOUT,
-                Duration::from_secs(30),
-            ),
-        )
+        .layer(HttpTimeoutLayer::with_status_code(
+            axum::http::StatusCode::GATEWAY_TIMEOUT,
+            Duration::from_secs(30),
+        ))
         .layer(ConcurrencyLimitLayer::new(100))
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid::default()))
         .layer(PropagateRequestIdLayer::x_request_id());
 
     Router::new()
         .route("/", get(hello))
-        .route("/items", post(create_item))
+        .route("/items", axum::routing::post(create_item))
         .route("/items/:id", get(get_item))
+        .route("/guests", axum::routing::post(create_guest))
+        .route(
+            "/guests/:id",
+            get(get_guest)
+                .put(update_guest)
+                .delete(delete_guest),
+        )
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .layer(middleware)
         .with_state(state)
 }
-

@@ -1,30 +1,28 @@
 //! Structure agrégée du store : chaque champ est le "store" pour une partie du domaine.
-//! Équivalent Go : type Store struct { Items ItemRepository; Cache ... }
+//! Équivalent Go : type Store struct { Items ItemRepository; Guests GuestRepository; ... }
 
 use std::sync::Arc;
 
-use crate::domain::ItemRepository;
+use crate::domain::{GuestRepository, ItemRepository};
+use sqlx::SqlitePool;
 
+use super::guest::SqliteGuestStore;
 use super::item::MemoryItemStore;
 
 /// Store agrégé : une structure dont chaque champ satisfait une interface du domaine.
 pub struct Store {
     /// Store des items (interface ItemRepository du domaine).
     pub items: Arc<dyn ItemRepository>,
-    // pub cache: Arc<dyn cache::Cache>,  // exemple pour plus tard
+    /// Store des guests (SQLite).
+    pub guests: Arc<dyn GuestRepository>,
 }
 
 impl Store {
-    pub fn new() -> Self {
+    pub fn new(pool: SqlitePool) -> Self {
         Self {
             items: Arc::new(MemoryItemStore::default()),
+            guests: Arc::new(SqliteGuestStore::new(pool)),
         }
-    }
-}
-
-impl Default for Store {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -32,6 +30,7 @@ impl Clone for Store {
     fn clone(&self) -> Self {
         Self {
             items: Arc::clone(&self.items),
+            guests: Arc::clone(&self.guests),
         }
     }
 }

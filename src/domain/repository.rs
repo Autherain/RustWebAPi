@@ -1,9 +1,9 @@
-//! Interface (trait) du stockage des items — équivalent Go interface.
+//! Interface (trait) du stockage des items et guests — équivalent Go interface.
 //! Les implémentations (store) vivent dans `pkg/store` / `store`.
 
 use async_trait::async_trait;
 
-use crate::domain::Item;
+use crate::domain::{Guest, Item};
 
 /// Erreur retournée par le repository.
 #[derive(Debug)]
@@ -15,7 +15,7 @@ pub enum RepositoryError {
 impl std::fmt::Display for RepositoryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            RepositoryError::NotFound(id) => write!(f, "item not found: {}", id),
+            RepositoryError::NotFound(id) => write!(f, "not found: {}", id),
             RepositoryError::Other(msg) => write!(f, "{}", msg),
         }
     }
@@ -31,4 +31,20 @@ pub trait ItemRepository: Send + Sync {
 
     /// Récupère un item par id.
     async fn get_by_id(&self, id: &str) -> Result<Option<Item>, RepositoryError>;
+}
+
+/// Interface du store des guests.
+#[async_trait]
+pub trait GuestRepository: Send + Sync {
+    /// Crée un guest et le persiste.
+    async fn create(&self, guest: Guest) -> Result<Guest, RepositoryError>;
+
+    /// Récupère un guest par uuid.
+    async fn get_by_id(&self, id: &uuid::Uuid) -> Result<Option<Guest>, RepositoryError>;
+
+    /// Met à jour un guest.
+    async fn update(&self, guest: Guest) -> Result<Guest, RepositoryError>;
+
+    /// Supprime un guest par uuid. Retourne l'uuid si supprimé.
+    async fn delete(&self, id: &uuid::Uuid) -> Result<Option<uuid::Uuid>, RepositoryError>;
 }

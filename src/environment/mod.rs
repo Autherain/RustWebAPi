@@ -5,6 +5,8 @@ use std::env;
 #[derive(Debug, Clone)]
 pub struct Variables {
     pub nats_url: String,
+    /// Chemin ou URL SQLite (ex: `sqlite:./data.db` ou `./data.db`).
+    pub database_url: String,
 }
 
 fn var_default(key: &str, default: &str) -> String {
@@ -18,8 +20,10 @@ pub fn parse() -> Variables {
     let _ = dotenvy::dotenv();
 
     let nats_url = var_default("ECH_NATS_URL", "nats://localhost:4222");
+    let database_url = var_default("ECH_DATABASE_URL", "sqlite::memory:");
 
     Variables {
         nats_url,
+        database_url,
     }
 }
