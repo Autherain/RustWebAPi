@@ -42,7 +42,10 @@ pub async fn hello() -> &'static str {
         crate::server::guest::CreateGuestRequest,
         crate::server::guest::UpdateGuestRequest,
         crate::server::guest::GuestResponse,
-        crate::server::guest::JsonFieldResponse,
+        crate::server::guest::StructuredValueStringInput,
+        crate::server::guest::StructuredValueStringResponse,
+        crate::server::guest::StructuredValueBoolInput,
+        crate::server::guest::StructuredValueBoolResponse,
     )),
     info(
         title = "Hello World API",

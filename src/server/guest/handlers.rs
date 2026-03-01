@@ -15,6 +15,9 @@ use crate::server::guest::dto::{CreateGuestRequest, UpdateGuestRequest};
 use crate::server::guest::mapper::{
     apply_update_request, create_request_to_guest, guest_to_response,
 };
+use crate::server::guest::validation::{
+    parse_guest_id, validate_create_request, validate_update_request,
+};
 use crate::server::state::AppState;
 
 /// POST /guests — Créer un guest.
@@ -24,7 +27,7 @@ use crate::server::state::AppState;
     request_body = crate::server::guest::dto::CreateGuestRequest,
     responses(
         (status = 201, description = "Guest créé", body = crate::server::guest::dto::GuestResponse),
-        (status = 400, description = "Requête invalide")
+        (status = 400, description = "Requête invalide (ex: au plus un email/téléphone préféré, format email)")
     ),
     tag = "guests"
 )]
@@ -32,6 +35,7 @@ pub async fn create_guest(
     State(state): State<AppState>,
     Json(payload): Json<CreateGuestRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
+    validate_create_request(&payload)?;
     let guest = create_request_to_guest(&payload);
     tracing::info!(guest_id = %guest.id, "handler: creating guest");
     let created = state.store.guests.create(guest).await?;
@@ -45,6 +49,7 @@ pub async fn create_guest(
     params(("id" = String, Path, description = "UUID du guest")),
     responses(
         (status = 200, description = "Guest trouvé", body = crate::server::guest::dto::GuestResponse),
+        (status = 400, description = "Id invalide (format UUID)"),
         (status = 404, description = "Guest non trouvé")
     ),
     tag = "guests"
@@ -53,7 +58,7 @@ pub async fn get_guest(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let uuid = uuid::Uuid::parse_str(&id).map_err(|_| ApiError::NotFound)?;
+    let uuid = parse_guest_id(&id)?;
     let guest = state
         .store
         .guests
@@ -71,6 +76,7 @@ pub async fn get_guest(
     request_body = crate::server::guest::dto::UpdateGuestRequest,
     responses(
         (status = 200, description = "Guest mis à jour", body = crate::server::guest::dto::GuestResponse),
+        (status = 400, description = "Requête invalide (ex: id invalide, au plus un email/téléphone préféré)"),
         (status = 404, description = "Guest non trouvé")
     ),
     tag = "guests"
@@ -80,7 +86,8 @@ pub async fn update_guest(
     Path(id): Path<String>,
     Json(payload): Json<UpdateGuestRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let uuid = uuid::Uuid::parse_str(&id).map_err(|_| ApiError::NotFound)?;
+    validate_update_request(&payload)?;
+    let uuid = parse_guest_id(&id)?;
     let existing = state
         .store
         .guests
@@ -99,6 +106,7 @@ pub async fn update_guest(
     params(("id" = String, Path, description = "UUID du guest")),
     responses(
         (status = 204, description = "Guest supprimé"),
+        (status = 400, description = "Id invalide (format UUID)"),
         (status = 404, description = "Guest non trouvé")
     ),
     tag = "guests"
@@ -108,7 +116,7 @@ pub async fn delete_guest(
     Extension(request_id): Extension<RequestId>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let uuid = uuid::Uuid::parse_str(&id).map_err(|_| ApiError::NotFound)?;
+    let uuid = parse_guest_id(&id)?;
     let deleted = state.store.guests.delete(&uuid).await?;
     let deleted_id = deleted.ok_or(ApiError::NotFound)?;
 

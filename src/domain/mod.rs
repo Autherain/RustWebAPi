@@ -6,7 +6,7 @@ mod item;
 mod repository;
 mod validation;
 
-pub use guest::{Guest, JsonField};
+pub use guest::{Guest, StructuredValue};
 pub use item::Item;
 pub use repository::{GuestRepository, ItemRepository, RepositoryError};
 pub use validation::{validate_item_name, ValidationError};
